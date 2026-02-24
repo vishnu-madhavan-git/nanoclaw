@@ -38,6 +38,7 @@ import { findChannel, formatMessages, formatOutbound } from './router.js';
 import { startSchedulerLoop } from './task-scheduler.js';
 import { Channel, NewMessage, RegisteredGroup } from './types.js';
 import { logger } from './logger.js';
+import { extractZeroclawCommand, sendToZeroclawBridge } from './zeroclaw-bridge.js';
 
 // Re-export for backwards compatibility during refactor
 export { escapeXml, formatMessages } from './router.js';
@@ -350,6 +351,49 @@ async function startMessageLoop(): Promise<void> {
 
           const isMainGroup = group.folder === MAIN_GROUP_FOLDER;
           const needsTrigger = !isMainGroup && group.requiresTrigger !== false;
+
+          // Optional direct bridge path:
+          // - Main group: /zc <message> or @Assistant /zc <message>
+          // - Other groups: @Assistant /zc <message>
+          const bridgeCommand = [...groupMessages]
+            .reverse()
+            .map((msg) => ({
+              msg,
+              prompt: extractZeroclawCommand(
+                msg.content,
+                ASSISTANT_NAME,
+                isMainGroup,
+              ),
+            }))
+            .find((item) => item.prompt !== null);
+
+          if (bridgeCommand) {
+            try {
+              await channel.setTyping?.(chatJid, true);
+              const response = await sendToZeroclawBridge(
+                bridgeCommand.prompt || '',
+                {
+                  source: 'nanoclaw',
+                  chat_jid: chatJid,
+                  group: group.name,
+                  sender: bridgeCommand.msg.sender_name,
+                },
+              );
+              await channel.sendMessage(chatJid, response);
+            } catch (err) {
+              logger.error(
+                { chatJid, err },
+                'Failed to execute /zc bridge command',
+              );
+            } finally {
+              await channel.setTyping?.(chatJid, false);
+            }
+
+            lastAgentTimestamp[chatJid] =
+              groupMessages[groupMessages.length - 1].timestamp;
+            saveState();
+            continue;
+          }
 
           // For non-main groups, only act on trigger messages.
           // Non-trigger messages accumulate in DB and get pulled as

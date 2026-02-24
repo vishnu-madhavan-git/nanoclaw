@@ -73,7 +73,10 @@ From the main channel (your self-chat), you can manage groups and tasks:
 @Andy list all scheduled tasks across groups
 @Andy pause the Monday briefing task
 @Andy join the Family Chat group
+@Andy /zc summarize today's top AI headlines in 5 bullets
 ```
+
+`/zc` routes a prompt to an external ZeroClaw bridge when `ZEROCLAW_BRIDGE_URL` is configured in `.env`.
 
 ## Customizing
 
